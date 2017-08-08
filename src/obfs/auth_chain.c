@@ -9,12 +9,6 @@
 
 uint32_t g_endian_test = 1;
 
-// this value control the chain_d's data_size_list max list
-// and also it will control the auth_chain_d_check_and_patch_data_size() function's max stack deep
-// BUT this magic number cannot change, because change this will case rand_data_len function return different len between sender and receiver
-// TODO make a optimization to avoid stack overflow
-#define AUTH_CHAIN_D_MAX_DATA_SIZE_LIST_LIMIT_SIZE 64
-
 typedef struct shift128plus_ctx {
     uint64_t v[2];
 } shift128plus_ctx;
@@ -158,12 +152,12 @@ unsigned int auth_chain_a_get_rand_len(
         return 0;
     shift128plus_init_from_bin_datalen(random, last_hash, 16, datalength);
     if (datalength > 1300)
-        return shift128plus_next(random) % 31;
+        return (unsigned int) (shift128plus_next(random) % 31);
     if (datalength > 900)
-        return shift128plus_next(random) % 127;
+        return (unsigned int) (shift128plus_next(random) % 127);
     if (datalength > 400)
-        return shift128plus_next(random) % 521;
-    return shift128plus_next(random) % 1021;
+        return (unsigned int) (shift128plus_next(random) % 521);
+    return (unsigned int) (shift128plus_next(random) % 1021);
 }
 
 unsigned int auth_chain_b_get_rand_len(
@@ -178,30 +172,32 @@ unsigned int auth_chain_b_get_rand_len(
     uint16_t overhead = server->overhead;
     auth_chain_b_data *special_data = (auth_chain_b_data *) local->auth_chain_special_data;
 
+    int other_data_size = datalength + overhead;
+
     // auth_chain_b_get_rand_len
     shift128plus_init_from_bin_datalen(random, last_hash, 16, datalength);
-    int pos = find_pos(special_data->data_size_list, special_data->data_size_list_length, datalength + overhead);
-    int final_pos = pos + shift128plus_next(random) % special_data->data_size_list_length;
+    int pos = find_pos(special_data->data_size_list, special_data->data_size_list_length, other_data_size);
+    uint64_t final_pos = pos + shift128plus_next(random) % special_data->data_size_list_length;
     if (final_pos < special_data->data_size_list_length) {
-        return special_data->data_size_list[final_pos] - datalength - overhead;
+        return special_data->data_size_list[final_pos] - other_data_size;
     }
 
-    int pos2 = find_pos(special_data->data_size_list2, special_data->data_size_list2_length, datalength + overhead);
-    int final_pos2 = pos2 + shift128plus_next(random) % special_data->data_size_list2_length;
+    int pos2 = find_pos(special_data->data_size_list2, special_data->data_size_list2_length, other_data_size);
+    uint64_t final_pos2 = pos2 + shift128plus_next(random) % special_data->data_size_list2_length;
     if (final_pos2 < special_data->data_size_list2_length) {
-        return special_data->data_size_list2[final_pos2] - datalength - overhead;
+        return special_data->data_size_list2[final_pos2] - other_data_size;
     }
     if (final_pos2 < pos2 + special_data->data_size_list2_length - 1) {
         return 0;
     }
 
     if (datalength > 1300)
-        return shift128plus_next(random) % 31;
+        return (unsigned int) (shift128plus_next(random) % 31);
     if (datalength > 900)
-        return shift128plus_next(random) % 127;
+        return (unsigned int) (shift128plus_next(random) % 127);
     if (datalength > 400)
-        return shift128plus_next(random) % 521;
-    return shift128plus_next(random) % 1021;
+        return (unsigned int) (shift128plus_next(random) % 521);
+    return (unsigned int) (shift128plus_next(random) % 1021);
 }
 
 unsigned int auth_chain_c_get_rand_len(
@@ -222,17 +218,17 @@ unsigned int auth_chain_c_get_rand_len(
         if (datalength > 1440)
             return 0;
         if (datalength > 1300)
-            return shift128plus_next(random) % 31;
+            return (unsigned int) (shift128plus_next(random) % 31);
         if (datalength > 900)
-            return shift128plus_next(random) % 127;
+            return (unsigned int) (shift128plus_next(random) % 127);
         if (datalength > 400)
-            return shift128plus_next(random) % 521;
-        return shift128plus_next(random) % 1021;
+            return (unsigned int) (shift128plus_next(random) % 521);
+        return (unsigned int) (shift128plus_next(random) % 1021);
     }
 
     int pos = find_pos(special_data->data_size_list0, special_data->data_size_list0_length, other_data_size);
     // random select a size in the leftover data_size_list0
-    int final_pos = pos + shift128plus_next(random) % (special_data->data_size_list0_length - pos);
+    uint64_t final_pos = pos + shift128plus_next(random) % (special_data->data_size_list0_length - pos);
     return special_data->data_size_list0[final_pos] - other_data_size;
 }
 
@@ -256,7 +252,7 @@ unsigned int auth_chain_d_get_rand_len(
     shift128plus_init_from_bin_datalen(random, last_hash, 16, datalength);
     int pos = find_pos(special_data->data_size_list0, special_data->data_size_list0_length, other_data_size);
     // random select a size in the leftover data_size_list0
-    int final_pos = pos + shift128plus_next(random) % (special_data->data_size_list0_length - pos);
+    uint64_t final_pos = pos + shift128plus_next(random) % (special_data->data_size_list0_length - pos);
     return special_data->data_size_list0[final_pos] - other_data_size;
 }
 
@@ -317,29 +313,19 @@ void auth_chain_c_init_data_size(obfs *self, server_info *server) {
     free(random);
 }
 
+#define AUTH_CHAIN_D_MAX_DATA_SIZE_LIST_LIMIT_SIZE 64
+
 void auth_chain_d_check_and_patch_data_size(obfs *self, shift128plus_ctx *random) {
     auth_chain_c_data *special_data = (auth_chain_c_data *)
             ((auth_chain_local_data *) self->l_data)->auth_chain_special_data;
 
-    if (special_data->data_size_list0[special_data->data_size_list0_length - 1] < 1300
-        && special_data->data_size_list0_length < AUTH_CHAIN_D_MAX_DATA_SIZE_LIST_LIMIT_SIZE) {
+    while (special_data->data_size_list0[special_data->data_size_list0_length - 1] < 1300
+           && special_data->data_size_list0_length < AUTH_CHAIN_D_MAX_DATA_SIZE_LIST_LIMIT_SIZE) {
 
         // data_size_list0.size + 1
-        // TODO optimization it to a loop to avoid stack overflow and pre-alloc array to avoid wast memory
-        int *new_ptr = (int *) realloc(special_data->data_size_list0, special_data->data_size_list0_length + 1);
-        if (new_ptr != NULL) {
-            special_data->data_size_list0 = new_ptr;
-
-            special_data->data_size_list0[special_data->data_size_list0_length] =
-                    shift128plus_next(random) % 2340 % 2040 % 1440;
-
-            ++special_data->data_size_list0_length;
-
-            auth_chain_d_check_and_patch_data_size(self, random);
-        } else {
-            // TODO memory not enough, todo disconnect this connect
-            // NOTICE small memory device do not use this obfs
-        }
+        special_data->data_size_list0[special_data->data_size_list0_length] =
+                shift128plus_next(random) % 2340 % 2040 % 1440;
+        ++(special_data->data_size_list0_length);
     }
 }
 
@@ -352,7 +338,7 @@ void auth_chain_d_init_data_size(obfs *self, server_info *server) {
 
     shift128plus_init_from_bin(random, server->key, 16);
     special_data->data_size_list0_length = shift128plus_next(random) % (8 + 16) + (4 + 8);
-    special_data->data_size_list0 = (int *) malloc(special_data->data_size_list0_length * sizeof(int));
+    special_data->data_size_list0 = (int *) malloc(AUTH_CHAIN_D_MAX_DATA_SIZE_LIST_LIMIT_SIZE * sizeof(int));
     for (int i = 0; i < special_data->data_size_list0_length; i++) {
         special_data->data_size_list0[i] = shift128plus_next(random) % 2340 % 2040 % 1440;
     }
@@ -523,29 +509,28 @@ void auth_chain_d_dispose(obfs *self) {
 }
 
 void auth_chain_a_set_server_info(obfs *self, server_info *server) {
-    server->overhead = 4;
+    // dont change server.overhead in there
+    // the server.overhead are counted from the local.c
+    // the input's server.overhead is the total server.overhead that sum of all the plugin's overhead
     memmove(&self->server, server, sizeof(server_info));
 }
 
 void auth_chain_b_set_server_info(obfs *self, server_info *server) {
-    server->overhead = 4;
     memmove(&self->server, server, sizeof(server_info));
     // auth_chain_b_init_data_size() init in there
-    auth_chain_b_init_data_size(self, server);
+    auth_chain_b_init_data_size(self, &self->server);
 }
 
 void auth_chain_c_set_server_info(obfs *self, server_info *server) {
-    server->overhead = 4;
     memmove(&self->server, server, sizeof(server_info));
     // auth_chain_c_init_data_size() init in there
-    auth_chain_c_init_data_size(self, server);
+    auth_chain_c_init_data_size(self, &self->server);
 }
 
 void auth_chain_d_set_server_info(obfs *self, server_info *server) {
-    server->overhead = 4;
     memmove(&self->server, server, sizeof(server_info));
     // auth_chain_d_init_data_size() init in there
-    auth_chain_d_init_data_size(self, server);
+    auth_chain_d_init_data_size(self, &self->server);
 }
 
 unsigned int udp_get_rand_len(shift128plus_ctx *random, uint8_t *last_hash) {
@@ -741,6 +726,7 @@ int auth_chain_a_client_pre_encrypt(obfs *self, char **pplaindata, int datalengt
     len = (int) (buffer - out_buffer);
     if ((int) *capacity < len) {
         *pplaindata = (char *) realloc(*pplaindata, *capacity = (size_t) (len * 2));
+        // TODO check realloc failed
         plaindata = *pplaindata;
     }
     local->last_data_len = datalength;
